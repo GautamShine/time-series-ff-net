@@ -39,9 +39,11 @@ rank_reduce <- function(data, num_comp){
 data <- read.csv("file.csv", header=TRUE)
 end <- length(data[,1]) # index of last data point
 
-ar_vals <- seq(5,15,5) # auto-regression values to try in neural net
+ar_vals <- seq(5,30,5) # auto-regression values to try in neural net
 hl_vals <- seq(5,30,5) # number of hidden layer nodes to try in neural net
-tr_vals <- seq(0.4,0.8,0.2) # percent of data to use for training
+tr_vals <- seq(0.5,0.8,0.2) # percent of data to use for training
+# note: iterative forecasting in the neural net fails if number of points in training
+# set is not at least 365 plus the order of autoregression 
 ann_error <- array(0, dim=c(length(ar_vals), length(hl_vals), length(tr_vals))) # ANN errors
 arima_error <- rep(0,length(tr_vals)) # ARIMA errors for comparison
 
@@ -136,16 +138,16 @@ for(k in tr_vals){
   ff_ann <- function(num_ar, num_hidden){
     rev_ts <- ts(rev, frequency=7)
     rev_stl <- stl(rev_ts, s.window="period")
-    stl_weekly <- rev_stl$time.series[,1]
-    rev_ns <- rev_stl$time.series[,2] + rev_stl$time.series[,3]
+    stl_weekly <- rev_stl$time.series[,1] # seasonal component
+    rev_ns <- rev_stl$time.series[,2] + rev_stl$time.series[,3] # trend and noise components
     if(num_ar > 7){
-      num_min <- num_ar
+      num_min <- num_ar # start point of training data set to autoregression order
       t <- matrix(0,start-1-num_ar,num_ar)
       for(i in 1:num_ar){
         t[,i] <- rev_ns[(num_ar-i+1):(start-i-1)]
       }
     }else{
-      num_min <- 7
+      num_min <- 7 # start at least a week out for weekly seasonality effects
       if(num_ar > 0){
         t <- matrix(0,start-1-num_min,num_ar)
         for(i in 1:num_ar){
@@ -166,9 +168,9 @@ for(k in tr_vals){
     # num_comp <- length(df[1,])
     # df <- rank_reduce(df, num_comp)
     
-    ann <- avNNet(X1 ~ ., data=df, repeats=10, weights=wts_init,
-                  size=num_hidden, linout=TRUE, trace=FALSE, maxit=100, decay=1e-3)
-    df_new <- matrix(c(special_days[start:end,]), nrow=num_pred)
+    ann <- avNNet(X1 ~ ., data=df, repeats=100, weights=wts_init,
+                  size=num_hidden, linout=TRUE, trace=FALSE, maxit=1000, decay=1e-3)
+    df_new <- matrix(c(special_days[start:end,]), nrow=num_pred) # expand data frame for prediction
     pred <- ann_iterative(ann, num_ar, num_min, df, df_new, num_pred)
     
     # restore weekly seasonality
